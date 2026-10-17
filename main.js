@@ -479,6 +479,8 @@ function applyCamera() {
     const oy = cy - cell.y * zoom + panOffsetY;
     boardEl.style.transform = `translate(${ox}px, ${oy}px) scale(${zoom})`;
   }
+  // ★追加：カメラが動くたびに矢印の位置も更新する
+  updateGuideArrow(); 
 }
 
 function setupPan() {
@@ -506,7 +508,8 @@ function setupPan() {
     if (isFullMap) return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    userZoom = Math.max(0.2, Math.min(3.0, userZoom * delta));
+    // ★修正：ズームアウトの限界を広げる (0.2 -> 0.05)
+    userZoom = Math.max(0.05, Math.min(3.0, userZoom * delta));
     applyCamera();
   }, { passive: false });
 
@@ -532,7 +535,8 @@ function setupPan() {
       const t2 = e.touches[1];
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       if (pinchStartDist > 0) {
-        userZoom = Math.max(0.2, Math.min(3.0, pinchStartZoom * (dist / pinchStartDist)));
+        // ★修正：ズームアウトの限界を広げる (0.2 -> 0.05)
+        userZoom = Math.max(0.05, Math.min(3.0, pinchStartZoom * (dist / pinchStartDist)));
         applyCamera();
       }
       return;
@@ -725,7 +729,8 @@ function updateGuideArrow() {
     el.textContent = "➤";
     boardEl.appendChild(el);
   }
-  if (player.isCPU || isMoving) {
+  // ★修正：移動中(isMoving)でも矢印を表示する
+  if (player.isCPU) {
     el.style.display = "none";
     return;
   }
@@ -946,7 +951,7 @@ function autoWalkTo(targetId, reachable) {
     lastWasBacktrack = isBacktrack;
     playSound("move");
     drawAllPlayers();
-    applyCamera();
+    applyCamera(); // ここで updateGuideArrow も呼ばれる
   }
 
   if (remainingSteps <= 0) {

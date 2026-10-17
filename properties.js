@@ -9,7 +9,6 @@ const PROP_TYPES = {
   fishing: { name:"漁港",   icon:"🐟", rate:0.15, sellable:true },
   ranch:   { name:"牧場",   icon:"🐄", rate:0.06, sellable:false },
   water:   { name:"水道局", icon:"🚰", rate:0.06, sellable:false },
-  // カスタム用追加タイプ
   restaurant: { name:"飲食店", icon:"🍖", rate:0.15, sellable:true },
   clinic:     { name:"接骨院", icon:"🩺", rate:0.10, sellable:true },
   care:       { name:"デイサービス", icon:"🤝", rate:0.12, sellable:true },
@@ -23,7 +22,6 @@ const PROP_PRICE = {
   fishing: { min:3000,  max:15000 },
   ranch:   { min:5000,  max:5000 },
   water:   { min:5000,  max:5000 },
-  // カスタム用価格帯
   restaurant: { min:2000, max:8000 },
   clinic:     { min:3000, max:10000 },
   care:       { min:3000, max:10000 },
@@ -31,11 +29,11 @@ const PROP_PRICE = {
 };
 
 const REGION_MIX = {
-  north:  [["farm",0.50],["factory",0.30],["tourism",0.10],["fishing",0.10]],
+  north:  [["farm",0.40],["factory",0.20],["restaurant",0.20],["tourism",0.20]],
   east:   [["farm",0.30],["fishing",0.50],["tourism",0.20]],
-  center: [["factory",0.50],["tourism",0.30],["farm",0.20]],
-  west:   [["tourism",0.40],["factory",0.30],["farm",0.20],["fishing",0.10]],
-  south:  [["fishing",0.40],["farm",0.30],["tourism",0.30]],
+  center: [["factory",0.40],["tourism",0.30],["restaurant",0.30]],
+  west:   [["tourism",0.40],["factory",0.20],["restaurant",0.20],["handyman",0.20]],
+  south:  [["fishing",0.40],["farm",0.20],["tourism",0.40]],
 };
 
 const SPECIAL_PROPS = {
@@ -46,7 +44,6 @@ const SPECIAL_PROPS = {
   narita:   "tourism",
 };
 
-// === 【追加】特定の駅のカスタム物件名 ===
 const CUSTOM_PROP_NAMES = {
   keisei_okubo: [
     "ジンギスカン屋", "ラム肉専門店", "ひつじカフェ", "羊肉焼肉店", 
@@ -57,7 +54,6 @@ const CUSTOM_PROP_NAMES = {
     "田中食堂", "田中薬局", "田中クリーニング", "田中理容室"
   ]
 };
-// ==============================================
 
 const SELL_RATE = 0.7;
 
@@ -95,18 +91,15 @@ function generateProperties(stationIdToCellId) {
 
       let pName = st.name + "の" + PROP_TYPES[type].name;
       
-      // カスタム名がある場合は上書き
       if (customNames) {
         pName = customNames[i];
-        // 名前に合わせて物件タイプを推測
         if (pName.includes("接骨院")) type = "clinic";
         else if (pName.includes("デイサービス")) type = "care";
         else if (pName.includes("便利屋")) type = "handyman";
         else if (pName.includes("食堂") || pName.includes("カフェ") || pName.includes("焼肉") || pName.includes("ジンギスカン")) type = "restaurant";
-        // それ以外はランダムのまま
       }
 
-      const p = PROP_PRICE[type] || PROP_PRICE.factory; // フォールバック
+      const p = PROP_PRICE[type] || PROP_PRICE.factory;
       const price = (p.min + Math.floor(Math.random() * (p.max - p.min + 1))) * 10000;
       
       ALL_PROPS.push({
