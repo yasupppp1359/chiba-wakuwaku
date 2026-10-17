@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+<title>千葉ワクワク紀行</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#223344">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="千葉ワクワク">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<style>
+  * { box-sizing: border-box; touch-action: manipulation; }
+  body { margin:0; font-family:'Hiragino Sans','Yu Gothic',sans-serif;
+         background:#f5f5f0; overflow:hidden;
+         display:flex; flex-direction:column; height:100vh; }
+  #hud { flex: 0 0 auto; background:linear-gradient(90deg,#223 0%,#445 100%);
+         color:#fff; padding:6px 10px; display:flex; gap:10px;
+         font-size:12px; flex-wrap:wrap; align-items:center; }
+  #turnInfo { padding:3px 10px; border-radius:14px; background:#4af;
+              font-weight:bold; color:#fff; font-size:12px; }
+  #money { font-weight:bold; color:#ffd700; }
+  #money.debt { color:#ff6060; animation: debtBlink 1s infinite; }
+  @keyframes debtBlink { 0%,100%{opacity:1;} 50%{opacity:.5;} }
+  #day, #month { color:#ccf; }
+  
+  /* 盤面を超巨大化 12000x10000 */
+  #board { flex:1 1 auto; min-height:0; position:relative;
+           overflow:hidden;
+           touch-action: none;
+           background: #b8d4b0;
+  }
+  #boardInner { position:absolute; width:12000px; height:10000px;
+                transform-origin: 0 0; transition: transform .35s ease-out;
+                background-image: url('map-bg.jpg');
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+  }
+  #boardInner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.35);
+    pointer-events: none;
+  }
+  #lines { position:absolute; top:0; left:0; pointer-events:none; }
+  
+  #guideArrow {
+    position: absolute; font-size: 36px; z-index: 70; pointer-events: none;
+    color: #ff3060; text-shadow: 0 0 4px #fff, 0 0 8px #fff, 0 0 12px #fff;
+    transform-origin: center; transition: left .2s, top .2s; display: none; font-weight: bold;
+  }
+  #diceOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 800;
+    display: flex; justify-content: center; align-items: center;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  #diceOverlay.show { opacity: 1; pointer-events: auto; }
+  .dice-container { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; max-width: 90vw; }
+  .dice-box {
+    width: 60px; height: 60px; background: #fff; border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(0,0,0,.4), inset 0 -4px 0 #ccd;
+    display: flex; justify-content: center; align-items: center;
+    font-size: 32px; font-weight: bold; color: #223; border: 2px solid #aab;
+    animation: diceShake 0.4s infinite;
+  }
+  @keyframes diceShake {
+    0% { transform: rotate(0deg) scale(1); }
+    25% { transform: rotate(-15deg) scale(0.9); }
+    50% { transform: rotate(15deg) scale(1.1); }
+    75% { transform: rotate(-10deg) scale(0.95); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
+  .dice-box.stop { animation: dicePop 0.3s ease-out forwards; }
+  @keyframes dicePop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+  }
+  #goalBanner {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg,#ffb8ff,#f080f0); color: #fff;
+    padding: 5px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;
+    box-shadow: 0 4px 12px rgba(200,0,200,.4); border: 2px solid #a0a;
+    z-index: 90; pointer-events: none; white-space: nowrap; display: flex; align-items: center; gap: 4px;
+  }
+  #goalBanner .goalLabel { font-size: 12px; }
+  #goalBanner .goalName { font-size: 14px; }
+  #panHint {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.55); color: #fff; padding: 3px 12px; border-radius: 14px;
+    font-size: 10px; z-index: 90; pointer-events: none; opacity: 0; transition: opacity .3s;
+  }
+  #panHint.show { opacity: 1; }
+
+  .cell { position:absolute; width:34px; height:34px; border-radius:50%;
+          display:flex; align-items:center; justify-content:center;
+          font-size:16px; cursor:pointer; transform: translate(-50%, -50%);
+          touch-action: manipulation; box-shadow: 0 2px 4px rgba(0,0,0,.3); transition: transform .12s; }
+  .cell:hover { transform: translate(-50%, -50%) scale(1.15); }
+  .plus  { background:radial-gradient(circle at 30% 30%, #7cc4ff, #2a8ce0); border:2px solid #1874c0; }
+  .minus { background:radial-gradient(circle at 30% 30%, #ff8080, #d03030); border:2px solid #a02020; }
+  .card  { background:radial-gradient(circle at 30% 30%, #ffe066, #e0a800); border:2px solid #a07000; }
+  .cell.yellowed { background:radial-gradient(circle at 30% 30%, #ffe066, #e0a800) !important; border-color:#a07000 !important; }
+  .event { background:radial-gradient(circle at 30% 30%, #ffe0ff, #d060d0); border:2px solid #a030a0; animation: eventGlow 1.5s infinite; }
+  @keyframes eventGlow {
+    0%, 100% { box-shadow: 0 2px 4px rgba(0,0,0,.3), 0 0 0 0 rgba(224,96,224,.6); }
+    50%      { box-shadow: 0 2px 4px rgba(0,0,0,.3), 0 0 0 8px rgba(224,96,224,0); }
+  }
+  .heli { background:radial-gradient(circle at 30% 30%, #c0ffd0, #40c060); border:2px solid #208040; animation: heliSpin 2s infinite linear; }
+  @keyframes heliSpin { 0%,100% { transform: translate(-50%, -50%) rotate(0deg); } 50% { transform: translate(-50%, -50%) rotate(180deg); } }
+  .nice { background:radial-gradient(circle at 30% 30%, #c0e0ff, #4080e0); border:2px solid #204080; box-shadow: 0 0 10px rgba(64,128,224,.8); }
+  .shop { background:radial-gradient(circle at 30% 30%, #ffe0a0, #e08040); border:2px solid #a05020; }
+  
+  .cell.station { width:76px; height:76px; border-radius:14px; border:4px solid #5a6a7a;
+                  background:linear-gradient(180deg, #ffffff 0%, #e8eef4 100%);
+                  font-size:36px; z-index:2;
+                  box-shadow: 0 5px 0 #5a6a7a, 0 8px 16px rgba(0,0,0,.4); }
+  .region-north  { background:linear-gradient(180deg,#e8f8e8,#c8e6c9); border-color:#2e7d32; }
+  .region-east   { background:linear-gradient(180deg,#e8f2ff,#bbdefb); border-color:#1565c0; }
+  .region-center { background:linear-gradient(180deg,#ffeef2,#ffcdd2); border-color:#c62828; }
+  .region-west   { background:linear-gradient(180deg,#fff5e2,#ffe0b2); border-color:#ef6c00; }
+  .region-south  { background:linear-gradient(180deg,#f3e5f5,#e1bee7); border-color:#6a1b9a; }
+
+  .cell.station.goal-station {
+    background:linear-gradient(180deg, #ffd0ff 0%, #f0a0e0 100%); border-color:#a060a0;
+    width:90px; height:90px; font-size:44px; z-index:3;
+    box-shadow: 0 5px 0 #a060a0, 0 8px 16px rgba(0,0,0,.4), 0 0 30px rgba(240,128,240,.8);
+    animation: goalPulse 1.6s infinite ease-in-out;
+  }
+  @keyframes goalPulse {
+    0%, 100% { box-shadow: 0 5px 0 #a060a0, 0 8px 16px rgba(0,0,0,.4), 0 0 0 0 rgba(240,128,240,.6); }
+    50%      { box-shadow: 0 5px 0 #a060a0, 0 8px 16px rgba(0,0,0,.4), 0 0 0 16px rgba(240,128,240,0); }
+  }
+  .cell.prop-station {
+    background:linear-gradient(180deg, #fff5e0 0%, #ffd890 100%); border-color:#c06020;
+    width:68px; height:68px; font-size:30px;
+    box-shadow: 0 4px 0 #c06020, 0 6px 12px rgba(0,0,0,.4);
+  }
+  
+  .cell.station.monopoly-0 { box-shadow: 0 5px 0 #2a8ce0, 0 8px 16px rgba(42,140,224,.4), 0 0 0 6px #7cc4ff; }
+  .cell.station.monopoly-1 { box-shadow: 0 5px 0 #f08020, 0 8px 16px rgba(240,128,32,.4), 0 0 0 6px #ffb060; }
+  .cell.station.monopoly-2 { box-shadow: 0 5px 0 #60a020, 0 8px 16px rgba(96,160,32,.4), 0 0 0 6px #a0e070; }
+  .cell.station.monopoly-3 { box-shadow: 0 5px 0 #e05090, 0 8px 16px rgba(224,80,144,.4), 0 0 0 6px #ff90c0; }
+
+  .station-label { position:absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.98); padding: 4px 10px; border-radius: 12px;
+    font-size: 14px; font-weight: bold; color: #223;
+    white-space: nowrap; pointer-events: none;
+    border: 2px solid #aab; box-shadow: 0 3px 6px rgba(0,0,0,.4); z-index: 10; }
+  .station-label.label-right { top: 50%; left: calc(100% + 10px); transform: translateY(-50%); }
+  .station-label.label-left { top: 50%; left: auto; right: calc(100% + 10px); transform: translateY(-50%); }
+  .station-label.label-top { top: auto; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+  .station-label.label-topleft { top: auto; bottom: calc(100% + 6px); left: auto; right: calc(100% + 10px); transform: none; }
+
+  .confetti { position: fixed; top: -20px; width: 10px; height: 18px; z-index: 9999; pointer-events: none; animation: confettiFall linear forwards; border-radius: 2px; }
+  @keyframes confettiFall { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(105vh) rotate(720deg); opacity: 0; } }
+
+  .player { position:absolute; width:44px; height:44px; font-size:32px; z-index:50; pointer-events:none;
+    display:flex; align-items:center; justify-content:center; transform: translate(-50%, -50%);
+    border-radius:50%; border:4px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,.6); }
+  .player.p0 { background:linear-gradient(135deg,#7cc4ff,#2a8ce0); }
+  .player.p1 { background:linear-gradient(135deg,#ffb060,#f08020); }
+  .player.p2 { background:linear-gradient(135deg,#a0e070,#60a020); }
+  .player.p3 { background:linear-gradient(135deg,#ff90c0,#e05090); }
+  .player.active { animation: pulsePlayer 0.9s infinite; z-index:60; }
+  @keyframes pulsePlayer { 0%,100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-50%,-50%) scale(1.3); } }
+
+  .cell.highlight { outline: 5px solid #0f0; outline-offset: 3px; z-index: 30; animation: blink 0.7s infinite; }
+  .cell.highlight[data-dist]::after {
+    content: attr(data-dist); position: absolute; top: -24px; left: 50%; transform: translateX(-50%);
+    background: #0a0; color: #fff; font-size: 16px; padding: 2px 8px; border-radius: 12px; font-weight: bold;
+    pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,.4); border: 2px solid #fff; }
+  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.45;} }
+
+  #log { flex: 0 0 auto; height: 84px; padding: 6px 10px; background: #fafbfd; border-top: 1px solid #dde; overflow-y: auto; }
+  #log > div { display: inline-block; background: #f0f4ff; border-radius: 12px; padding: 4px 12px; margin: 3px 4px 3px 0; font-size: 12px; max-width: 100%; animation: bubbleIn .25s ease-out; border: 1px solid #dde4ff; }
+  #log > div.warn { background:#fee; border-color:#faa; color:#c00; }
+  @keyframes bubbleIn { from { opacity: 0; transform: translateY(6px) scale(.95); } to { opacity: 1; transform: none; } }
+
+  #controls { flex: 0 0 auto; background:#223; color:#fff; padding:6px 8px; display:flex; gap:5px; flex-wrap:wrap; }
+  button { padding:8px 12px; font-size:12px; cursor:pointer; border-radius:8px; border:none; min-height:42px; font-weight:bold; transition: transform .1s; }
+  button:active { transform: scale(.95); }
+  #rollBtn { background:linear-gradient(135deg,#5cb85c,#3c903c); color:#fff; }
+  #cardBtn { background:linear-gradient(135deg,#f0ad4e,#d08020); color:#fff; }
+  #propBtn { background:linear-gradient(135deg,#5bc0de,#3090b0); color:#fff; }
+  #rankBtn { background:linear-gradient(135deg,#ffd700,#c0a000); color:#333; }
+  #goalReachBtn { background:linear-gradient(135deg,#ff7090,#d03060); color:#fff; display:none; }
+  #goalReachBtn.show { display:inline-block; animation: goalReachPulse 1s infinite; }
+  @keyframes goalReachPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,112,144,.8); } 50% { box-shadow: 0 0 0 8px rgba(255,112,144,0); } }
+  #mapToggleBtn { background:linear-gradient(135deg,#7c9cff,#4060d0); color:#fff; }
+  #muteBtn { background:linear-gradient(135deg,#a070e0,#6040b0); color:#fff; }
+  #saveBtn, #loadBtn { background:#666; color:#fff; }
+  #debugBtn { background:#888; color:#fff; font-size:10px; }
+  button:disabled { background:#555 !important; cursor:not-allowed; opacity:.5; }
+
+  #effectDialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 450; pointer-events: none; display: none; justify-content: center; align-items: center; }
+  #effectDialog.hidden { display: none; }
+  .effect-panel { background: rgba(255,255,255,.98); border-radius: 18px; padding: 20px 24px; min-width: 240px; max-width: 90vw; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.35); border: 3px solid #5a6a7a; pointer-events: auto; }
+  .effect-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .effect-item { font-size: 16px; font-weight: bold; color: #333; padding: 6px 10px; background: #f0f4ff; border-radius: 10px; }
+  .effect-ok-btn { padding: 12px 32px; background: linear-gradient(135deg,#5cb85c,#3c903c); color: #fff; font-size: 16px; font-weight: bold; border-radius: 10px; border: none; cursor: pointer; min-height: 48px; min-width: 120px; }
+
+  #handPanel { position: fixed; left:0; right:0; bottom:0; background:#fff; border-top: 3px solid #223; padding: 10px; max-height: 60vh; overflow-y: auto; z-index: 100; transition: transform .25s ease-out; box-shadow: 0 -4px 12px rgba(0,0,0,.25); border-radius: 16px 16px 0 0; }
+  #handPanel.hidden { transform: translateY(110%); pointer-events: none; }
+  .handHeader { display:flex; justify-content:space-between; align-items:center; font-weight:bold; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #ccc; }
+  .handHeader button { padding:6px 12px; font-size:12px; background:#f80; color:#fff; }
+  #handList { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .handCard { border: 2px solid #888; border-radius: 8px; padding: 6px 4px; text-align: center; cursor: pointer; font-size: 11px; transition: transform .1s; user-select: none; }
+  .handCard:hover { transform: scale(1.05); }
+  .handCard:active { transform: scale(.95); }
+  .handCard .cIcon { font-size: 22px; display:block; margin-bottom:2px; }
+  .handCard .cName { font-weight:bold; font-size:11px; display:block; margin-bottom:2px; }
+  .handCard .cCat { font-size:9px; color:#555; }
+  .handCard.move  { background:#cee; }
+  .handCard.warp  { background:#ecf; }
+  .handCard.prop  { background:#cfc; }
+  .handCard.util  { background:#ffc; }
+  .handCard.money { background:#ffe4b3; }
+  .handCard.jama  { background:#fcc; }
+
+  #propDialog { position: fixed; left:50%; top:50%; transform: translate(-50%, -50%); width: min(440px, 94vw); max-height: 80vh; overflow-y: auto; background:#fff; border-radius:14px; z-index:200; box-shadow: 0 8px 32px rgba(0,0,0,.4); padding: 16px; }
+  #propDialog.hidden { display:none; }
+  .propHeader { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:6px; border-bottom:2px solid #223; }
+  .propHeader .name { font-weight:bold; font-size:15px; }
+  .propHeader button { padding:6px 12px; font-size:12px; background:#888; color:#fff; }
+  .propItem { display:flex; justify-content:space-between; align-items:center; padding:8px 6px; border-bottom:1px solid #eee; }
+  .propItem .info { flex:1; }
+  .propItem .icon { font-size:20px; margin-right:6px; }
+  .propItem .name { font-weight:bold; font-size:13px; }
+  .propItem .type { font-size:11px; color:#666; }
+  .propItem .price { font-size:13px; font-weight:bold; color:#c60; margin-top:2px; }
+  .propItem button { padding:8px 14px; background:linear-gradient(135deg,#5cb85c,#3c903c); color:#fff; font-weight:bold; font-size:12px; }
+  .propItem button:disabled { background:#ccc; cursor:not-allowed; }
+
+  #debtDialog { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 300; display: flex; justify-content: center; align-items: center; padding: 16px; }
+  #debtDialog.hidden { display: none; }
+  .debtPanel { background: linear-gradient(135deg,#fff5f5,#ffe0e0); border-radius: 18px; padding: 20px; width: min(440px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(200,0,0,.5); border: 3px solid #d03030; }
+  .debtPanel h2 { margin: 0 0 8px; color: #c00; font-size: 20px; text-align: center; }
+  .debtPanel .debtInfo { text-align: center; margin-bottom: 12px; font-size: 14px; font-weight: bold; color: #333; }
+  .debtPanel .debtInfo .debtAmount { color: #c00; font-size: 18px; display: block; margin-top: 4px; }
+  .debtPanel .debtMsg { text-align: center; font-size: 12px; color: #666; margin-bottom: 12px; padding: 8px; background: rgba(255,255,255,.7); border-radius: 8px; }
+  #debtList { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .debtItem { display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 10px; padding: 8px 10px; border: 1px solid #ddd; }
+  .debtItem .info { flex: 1; font-size: 12px; }
+  .debtItem .name { font-weight: bold; }
+  .debtItem .type { font-size: 11px; color: #666; }
+  .debtItem .price { font-size: 12px; font-weight: bold; color: #c60; }
+  .debtItem .sellPrice { font-size: 12px; font-weight: bold; color: #0a0; }
+  .debtItem button { padding: 8px 14px; background: linear-gradient(135deg,#e0a020,#c08020); color: #fff; font-weight: bold; font-size: 12px; }
+  .debtItem button.sell { background: linear-gradient(135deg,#d04040,#a02020); }
+  .debtItem button:disabled { background:#ccc; cursor:not-allowed; }
+  .debtItem .locked { font-size: 10px; color: #999; padding: 4px 8px; background: #f0f0f0; border-radius: 6px; }
+  .debtFooter { text-align: center; font-size: 12px; color: #666; padding-top: 8px; border-top: 1px solid #ddd; }
+
+  #settleDialog { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 300; display: flex; justify-content: center; align-items: center; padding: 16px; }
+  #settleDialog.hidden { display: none; }
+  .settlePanel { background: linear-gradient(135deg,#fffbf0,#fff0d0); border-radius: 18px; padding: 18px; width: min(460px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(200,150,0,.5); border: 3px solid #e0a020; }
+  .settlePanel h2 { margin: 0 0 4px; color: #a06000; font-size: 20px; text-align: center; }
+  .settlePanel .subtitle2 { text-align: center; font-size: 12px; color: #666; margin-bottom: 12px; }
+  .settleTable { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  .settleTable th { background: #ffe8b0; padding: 6px 8px; font-size: 12px; border: 1px solid #e0c080; }
+  .settleTable td { padding: 6px 8px; font-size: 13px; border: 1px solid #eee; background: #fff; }
+  .settleTable .name { font-weight: bold; }
+  .settleTable .gain { text-align: right; color: #0a0; font-weight: bold; }
+  .settleTable .gain.zero { color: #888; font-weight: normal; }
+  .rankRow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 4px; background: #fff; border-radius: 8px; border: 1px solid #eee; font-size: 13px; }
+  .rankRow.rank1 { background: linear-gradient(135deg,#fff7d0,#ffe080); border-color: #e0a020; font-weight: bold; }
+  .rankRow .rankPos { font-size: 18px; min-width: 30px; text-align: center; }
+  .rankRow .rankName { flex: 1; font-weight: bold; }
+  .rankRow .rankMoney { font-weight: bold; color: #c60; }
+  .settleBtn { width: 100%; padding: 12px; background: linear-gradient(135deg,#e0a020,#c08020); color: #fff; font-size: 15px; font-weight: bold; border-radius: 10px; border: none; cursor: pointer; min-height: 48px; }
+
+  #rankDialog, #endDialog { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 320; display: flex; justify-content: center; align-items: center; padding: 16px; }
+  #rankDialog.hidden, #endDialog.hidden { display: none; }
+  .rankPanel { background: linear-gradient(135deg,#fff,#f0f4ff); border-radius: 20px; padding: 20px; width: min(480px, 100%); max-height: 92vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,.5); border: 3px solid #4060d0; }
+  .rankPanel h2 { margin: 0 0 6px; text-align: center; font-size: 22px; color: #4060d0; }
+  .rankPanel .date { text-align: center; font-size: 12px; color: #666; margin-bottom: 14px; }
+  .rankPanel .row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px; background: #fff; border-radius: 10px; border: 2px solid #ddd; font-size: 14px; }
+  .rankPanel .row.rank1 { background: linear-gradient(135deg,#fff7d0,#ffe080); border-color: #e0a020; box-shadow: 0 3px 10px rgba(224,160,32,.4); }
+  .rankPanel .row .pos { font-size: 22px; min-width: 36px; text-align: center; }
+  .rankPanel .row .name { flex: 1; font-weight: bold; }
+  .rankPanel .row .money { font-weight: bold; color: #c60; }
+  .rankPanel .row .sub { font-size: 10px; color: #666; }
+  .endBtn { width: 100%; padding: 14px; margin-top: 10px; background: linear-gradient(135deg,#5cb85c,#3c903c); color: #fff; font-size: 16px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; min-height: 52px; }
+  .endBtn.reset { background: linear-gradient(135deg,#7c9cff,#4060d0); }
+
+  #goalDialog { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 310; display: flex; justify-content: center; align-items: center; padding: 16px; }
+  #goalDialog.hidden { display: none; }
+  .goalPanel { background: linear-gradient(135deg,#fff0f5,#ffe0f0); border-radius: 18px; padding: 22px; width: min(400px, 100%); text-align: center; box-shadow: 0 12px 40px rgba(200,0,80,.4); border: 3px solid #ff7090; }
+  .goalPanel h2 { margin: 0 0 12px; font-size: 22px; color: #d03060; }
+  .goalPanel .goalMsg { font-size: 15px; margin-bottom: 16px; font-weight: bold; color: #333; }
+  .goalPanel .goalBtnRow { display: flex; gap: 8px; justify-content: center; }
+  .goalPanel button { padding: 12px 24px; font-size: 15px; font-weight: bold; border-radius: 10px; border: none; cursor: pointer; min-height: 48px; flex: 1; }
+  .goalPanel .btnYes { background: linear-gradient(135deg,#5cb85c,#3c903c); color: #fff; }
+  .goalPanel .btnNo { background: linear-gradient(135deg,#888,#555); color: #fff; }
+
+  #goalArrivalDialog { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 400; display: flex; justify-content: center; align-items: center; padding: 16px; }
+  #goalArrivalDialog.hidden { display: none; }
+  .goalArrivalPanel { background: linear-gradient(135deg,#fff0ff,#ffe0f5); border-radius: 20px; padding: 24px; width: min(420px, 100%); text-align: center; box-shadow: 0 12px 40px rgba(200,0,150,.5); border: 3px solid #f080f0; animation: goalArrivalIn .4s ease-out; }
+  @keyframes goalArrivalIn { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .goalArrivalPanel h2 { margin: 0 0 16px; font-size: 22px; color: #c030a0; }
+  .goalArrivalPanel .arrivalMsg { font-size: 15px; margin: 6px 0; color: #333; }
+  .goalArrivalPanel .arrivalName { font-size: 20px; font-weight: bold; color: #4060d0; }
+  .goalArrivalPanel .arrivalPrize { font-size: 18px; font-weight: bold; color: #0a0; margin: 12px 0; }
+  .goalArrivalPanel .arrivalNext { font-size: 14px; color: #666; margin: 12px 0 20px; padding: 10px; background: #eef; border-radius: 10px; }
+  .goalArrivalPanel .arrivalNext strong { color: #d03060; font-size: 16px; }
+  .goalArrivalPanel .arrivalOkBtn { width: 100%; padding: 14px; background: linear-gradient(135deg,#f080f0,#c030a0); color: #fff; font-size: 16px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; min-height: 52px; }
+
+  #resumeDialog { position: fixed; inset: 0; background: linear-gradient(135deg, #7cc4ff 0%, #f0a0e0 50%, #ffd060 100%); z-index: 600; display: flex; justify-content: center; align-items: center; padding: 20px; }
+  #resumeDialog.hidden { display: none; }
+  .resumePanel { background: #fff; border-radius: 20px; padding: 24px; width: min(400px, 100%); text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+  .resumePanel h2 { margin: 0 0 12px; font-size: 22px; }
+  .resumeInfo { font-size: 14px; color: #666; margin: 8px 0; }
+  .resumeDetail { font-size: 16px; font-weight: bold; color: #4060d0; padding: 10px; background: #eef; border-radius: 10px; margin: 12px 0 20px; }
+  .resumeBtnRow { display: flex; gap: 10px; }
+  .resumeBtnRow button { flex: 1; padding: 14px; font-size: 15px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; min-height: 54px; }
+  .resumeYes { background: linear-gradient(135deg,#5cb85c,#3c903c); color: #fff; }
+  .resumeNo { background: linear-gradient(135deg,#7c9cff,#4060d0); color: #fff; }
+
+  #startScreen { position: fixed; inset: 0; background: linear-gradient(135deg, #7cc4ff 0%, #f0a0e0 50%, #ffd060 100%); z-index: 500; overflow-y: auto; display: flex; justify-content: center; padding: 20px; }
+  #startScreen.hidden { display: none; }
+  .startPanel { background: #fff; border-radius: 20px; padding: 22px; width: min(480px, 100%); height: fit-content; margin: auto 0; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+  .startPanel h1 { margin: 0 0 4px; font-size: 24px; text-align: center; }
+  .subtitle { color: #666; font-size: 12px; margin: 0 0 16px; text-align: center; }
+  .startSection { margin-bottom: 14px; }
+  .startSection > label { display: block; font-weight: bold; font-size: 13px; margin-bottom: 6px; }
+  .btnGroup { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btnGroup button { flex: 1; min-width: 60px; padding: 8px 10px; background: #eef; color: #223; font-size: 13px; border: 2px solid #ccd; border-radius: 8px; min-height: 42px; cursor: pointer; font-weight: normal; }
+  .btnGroup button.selected { background: linear-gradient(135deg,#7c9cff,#4060d0); color: #fff; border-color: #4060d0; font-weight: bold; }
+  #playerInputs, #cpuInputs { display: flex; flex-direction: column; gap: 8px; }
+  .playerRow { display: flex; gap: 8px; align-items: center; background: #f8f8f8; border-radius: 10px; padding: 8px; flex-wrap: wrap; }
+  .playerRow .label { font-weight: bold; font-size: 12px; min-width: 76px; }
+  .playerRow .nameInput { flex: 1; padding: 10px 12px; border: 2px solid #ccd; border-radius: 8px; font-size: 16px !important; min-width: 0; -webkit-user-select: text !important; user-select: text !important; -webkit-appearance: none; appearance: none; touch-action: auto; }
+  .playerRow .nameInput:focus { border-color: #4060d0; outline: none; box-shadow: 0 0 0 3px rgba(64,96,208,.2); }
+  .playerRow .iconSel { display: flex; gap: 3px; }
+  .playerRow .iconSel button { font-size: 18px; padding: 4px 6px; min-height: 38px; min-width: 38px; background: #eef; border: 2px solid #ccd; border-radius: 8px; cursor: pointer; }
+  .playerRow .iconSel button.selected { background: linear-gradient(135deg,#7c9cff,#4060d0); border-color: #4060d0; }
+  .playerRow .levelSel { display: flex; gap: 3px; flex: 1; }
+  .playerRow .levelSel button { flex: 1; padding: 6px 4px; font-size: 11px; min-height: 38px; background: #eef; border: 2px solid #ccd; border-radius: 8px; cursor: pointer; font-weight: normal; }
+  .playerRow .levelSel button.selected { background: linear-gradient(135deg,#7c9cff,#4060d0); color: #fff; border-color: #4060d0; font-weight: bold; }
+  #startBtn { width: 100%; margin-top: 8px; padding: 15px; background: linear-gradient(135deg,#5cb85c,#3c903c); color: #fff; font-size: 17px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; min-height: 54px; box-shadow: 0 4px 12px rgba(60,144,60,.4); }
+  #startBtn:hover { transform: translateY(-2px); }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span id="day">1日目</span>
+  <span id="month">1ヶ月目</span>
+  <span id="turnInfo">🎮 <span id="curIcon">🧑</span> <span id="curName">-</span></span>
+  <span id="money">0きゅん</span>
+  <span id="remain">ゴールまで -- マス</span>
+</div>
+<div id="board">
+  <div id="goalBanner">
+    <span class="goalLabel">🎯 現在のゴール：</span>
+    <span class="goalName" id="goalBannerName">-</span>
+  </div>
+  <div id="boardInner">
+    <svg id="lines" width="12000" height="10000"></svg>
+  </div>
+  <div id="panHint">👆 指でドラッグして先を見られます</div>
+</div>
+<div id="log"></div>
+<div id="controls">
+  <button id="rollBtn">🎲 サイコロ</button>
+  <button id="goalReachBtn">🎯 ゴールにいける？</button>
+  <button id="cardBtn">🎴 カードを使う</button>
+  <button id="propBtn">🏘 物件一覧</button>
+  <button id="rankBtn">🏆 順位表</button>
+  <button id="mapToggleBtn">🗺 全体マップ</button>
+  <button id="muteBtn">🔊 音ON</button>
+  <button id="saveBtn">💾</button>
+  <button id="loadBtn">📂</button>
+  <button id="debugBtn">🎴テスト</button>
+</div>
+<div id="diceOverlay">
+  <div class="dice-container" id="diceContainer"></div>
+</div>
+<div id="effectDialog" class="hidden">
+  <div class="effect-panel">
+    <div class="effect-list" id="effectList"></div>
+    <button class="effect-ok-btn" id="effectOkBtn">OK</button>
+  </div>
+</div>
+<div id="handPanel" class="hidden">
+  <div class="handHeader">
+    <span>手札 <span id="handCount">0</span>/10</span>
+    <button id="closeHand">閉じる</button>
+  </div>
+  <div id="handList"></div>
+</div>
+<div id="propDialog" class="hidden">
+  <div class="propHeader">
+    <span class="name" id="propStationName">物件</span>
+    <button id="closePropDialog">閉じる</button>
+  </div>
+  <div id="propList"></div>
+</div>
+<div id="debtDialog" class="hidden">
+  <div class="debtPanel">
+    <h2>💸 借金返済</h2>
+    <div class="debtInfo">
+      借金額
+      <span class="debtAmount" id="debtAmount">0きゅん</span>
+    </div>
+    <div class="debtMsg" id="debtMsg">
+      物件を売却して借金を返済してください
+    </div>
+    <div id="debtList"></div>
+    <div class="debtFooter" id="debtFooter"></div>
+  </div>
+</div>
+<div id="settleDialog" class="hidden">
+  <div class="settlePanel">
+    <h2 id="settleTitle">💰 決算</h2>
+    <div class="subtitle2" id="settleSubtitle">物件収入の集計</div>
+    <div id="settleIncome"></div>
+    <div class="sectionTitle" style="font-weight:bold;font-size:13px;color:#333;margin:12px 0 6px;padding:4px 8px;background:#eef;border-radius:6px;">【現在の順位】</div>
+    <div id="settleRank"></div>
+    <button class="settleBtn" id="settleOkBtn">OK</button>
+  </div>
+</div>
+<div id="rankDialog" class="hidden">
+  <div class="rankPanel">
+    <h2>🏆 順位表</h2>
+    <div class="date" id="rankDate">-</div>
+    <div id="rankList"></div>
+    <button class="endBtn" id="rankCloseBtn">閉じる</button>
+  </div>
+</div>
+<div id="endDialog" class="hidden">
+  <div class="rankPanel">
+    <h2 id="endTitle">🎉 ゲーム終了！ 🎉</h2>
+    <div class="date" id="endDate">-</div>
+    <div id="endList"></div>
+    <button class="endBtn reset" id="restartBtn">🔄 もう一度遊ぶ</button>
+  </div>
+</div>
+<div id="goalDialog" class="hidden">
+  <div class="goalPanel">
+    <h2 id="goalDialogTitle">🎯 ゴール判定</h2>
+    <div class="goalMsg" id="goalDialogMsg">-</div>
+    <div class="goalBtnRow" id="goalDialogBtns"></div>
+  </div>
+</div>
+<div id="goalArrivalDialog" class="hidden">
+  <div class="goalArrivalPanel">
+    <h2>🎉 目的地に到着！ 🎉</h2>
+    <p class="arrivalMsg"><span class="arrivalName" id="arrivalName">-</span> が</p>
+    <p class="arrivalMsg"><span class="arrivalName" id="arrivalGoal">-</span> に到着！</p>
+    <p class="arrivalPrize" id="arrivalPrize">-</p>
+    <p class="arrivalNext" id="arrivalNext">-</p>
+    <button class="arrivalOkBtn" id="goalArrivalOkBtn">OK</button>
+  </div>
+</div>
+<div id="resumeDialog" class="hidden">
+  <div class="resumePanel">
+    <h2>🚃 千葉ワクワク紀行</h2>
+    <p class="resumeInfo">前回の続きがあります</p>
+    <p class="resumeDetail" id="resumeDetail">-</p>
+    <div class="resumeBtnRow">
+      <button id="resumeBtn" class="resumeYes">▶ 続きから</button>
+      <button id="newGameBtn" class="resumeNo">🆕 新規ゲーム</button>
+    </div>
+  </div>
+</div>
+<div id="startScreen">
+  <div class="startPanel">
+    <h1>🚃 千葉ワクワク紀行</h1>
+    <p class="subtitle">千葉をめぐって「きゅん」を稼ごう！</p>
+    <div class="startSection">
+      <label>👥 プレイヤー人数（人間）</label>
+      <div class="btnGroup" id="humanCountGroup"></div>
+    </div>
+    <div class="startSection">
+      <label>🤖 CPU追加</label>
+      <div class="btnGroup" id="cpuCountGroup"></div>
+    </div>
+    <div class="startSection">
+      <label>📅 プレイ期間</label>
+      <div class="btnGroup" id="monthsGroup"></div>
+    </div>
+    <div class="startSection">
+      <label>👤 プレイヤー設定</label>
+      <div id="playerInputs"></div>
+    </div>
+    <div class="startSection" id="cpuSection">
+      <label>🤖 CPU設定</label>
+      <div id="cpuInputs"></div>
+    </div>
+    <button id="startBtn">🎮 ゲームスタート</button>
+  </div>
+</div>
+<script src="data.js?v=4"></script>
+<script src="cards.js?v=4"></script>
+<script src="properties.js?v=4"></script>
+<script src="events.js?v=4"></script>
+<script src="sound.js?v=4"></script>
+<script src="cpu.js?v=4"></script>
+<script src="main.js?v=4"></script>
+<script src="main2.js?v=4"></script>
+<script src="start.js?v=4"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((reg) => reg.unregister());
+    console.log("✅ 古いService Workerを削除しました");
+  });
+  if ("caches" in window) {
+    caches.keys().then((names) => {
+      names.forEach((name) => caches.delete(name));
+    });
+  }
+}
+</script>
+</body>
+</html>
